@@ -1,0 +1,32 @@
+\documentclass{resume}
+\usepackage{enumitem}
+
+\begin{document}
+
+\introduction[
+    fullname={ {{.FullName}} },
+    email={ {{.Email}} },
+    phone={ {{.Phone}} },
+    linkedin={ {{.LinkedIn}} },
+    github={ {{.GitHub}} }
+]
+
+\summary{ {{.Summary}} }
+
+\begin{skillsSection}{Technical Skills}
+    {{.Skills}}
+\end{skillsSection}
+
+\begin{experienceSection}{Professional Experience}
+    {{.Experience}}
+\end{experienceSection}
+
+\begin{experienceSection}{Key Projects}
+    {{.Projects}}
+\end{experienceSection}
+
+\begin{skillsSection}{Certifications \& Recognition}
+    {{.Awards}}
+\end{skillsSection}
+
+\end{document}
