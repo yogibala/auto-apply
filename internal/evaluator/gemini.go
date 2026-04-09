@@ -2,50 +2,64 @@ package evaluator
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
 	"os"
+	"strings"
 
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
 )
 
-func EvaluateJob(jd string, cvContent string) (string, error) {
+type AIResponse struct {
+	Summary         string `json:"summary"`
+	SkillsLatex     string `json:"skills_latex"`
+	ExperienceLatex string `json:"experience_latex"`
+	ProjectsLatex   string `json:"projects_latex"`
+	AwardsLatex     string `json:"awards_latex"`
+	Grade           string `json:"grade"`
+	Score           int    `json:"score"`
+}
+
+func EvaluateAndTailor(jd string, cv string) (*AIResponse, error) {
 	ctx := context.Background()
+	// Engineering Bias: v1beta is often required for the latest models like Gemini 3
 	client, err := genai.NewClient(ctx, option.WithAPIKey(os.Getenv("GEMINI_API_KEY")))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer client.Close()
 
-	model := client.GenerativeModel("gemini-1.5-pro")
+	// Updating to the 2026 standard model
+	model := client.GenerativeModel("gemini-3-flash-preview")
+
+	model.ResponseMIMEType = "application/json"
 
 	prompt := fmt.Sprintf(`
-    Act as an Expert LaTeX Resume Writer. 
-    Use the provided JD and CV to generate a tailored resume.
-    
-    CRITICAL: Use these LaTeX macros ONLY:
-    - \skillItem[category={...}, skills={...}]
-    - \experienceItem[company={...}, location={...}, position={...}, duration={...}]
-    - \projectItem[title={...}, duration={...}, keyHighlight={...}]
-    
-    Return a JSON object:
-    {
-        "summary": "...",
-        "skills_latex": "\\skillItem[category={...}, skills={...}] \\\\ ...",
-        "experience_latex": "\\experienceItem[...] \\begin{itemize} ... \\end{itemize}",
-        "projects_latex": "..."
-    }
-    
-    JD: %s
-    CV: %s
-`, jd, cv)
+		Act as a Senior Tech Recruiter. Using the JD and CV provided, generate a tailored resume.
+		Return a JSON object that fits the resume.cls macros exactly.
+		
+		JD: %s
+		CV: %s
+	`, jd, cv)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	// Extract text from the first candidate
-	return fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0]), nil
+	var aiResult AIResponse
+	rawJSON := fmt.Sprintf("%v", resp.Candidates[0].Content.Parts[0])
+
+	// Robust cleaning for AI output
+	rawJSON = strings.TrimSpace(rawJSON)
+	rawJSON = strings.TrimPrefix(rawJSON, "```json")
+	rawJSON = strings.TrimSuffix(rawJSON, "```")
+
+	err = json.Unmarshal([]byte(rawJSON), &aiResult)
+	if err != nil {
+		return nil, fmt.Errorf("AI parsing error: %v", err)
+	}
+
+	return &aiResult, nil
 }

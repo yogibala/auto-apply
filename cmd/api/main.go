@@ -1,58 +1,77 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/yogibala/auto-apply/internal/database"
 	"github.com/yogibala/auto-apply/internal/evaluator"
+	"github.com/yogibala/auto-apply/internal/generator"
 	"github.com/yogibala/auto-apply/internal/scraper"
-	"github.com/yogibala/auto-apply/pkg/models"
 	"net/http"
 	"os"
 )
 
 func main() {
-	database.InitDB() // Initialize the SQLite memory
+	fmt.Println("🚀 Initializing Auto-Apply Backend...")
+	database.InitDB()
+
 	r := gin.Default()
 
-	r.POST("/api/evaluate", func(c *gin.Context) {
+	// Fixed: Register /ping route
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "pong"})
+	})
+
+	r.POST("/api/apply", func(c *gin.Context) {
 		var input struct {
 			URL string `json:"url"`
-			JD  string `json:"jd"` // User can still paste text if scraper fails
 		}
-
 		if err := c.ShouldBindJSON(&input); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "JSON body with 'url' is required"})
 			return
 		}
 
-		jdText := input.JD
-		// If a URL is provided, the scraper takes priority
-		if input.URL != "" {
-			scraped, err := scraper.ExtractJD(input.URL)
-			if err == nil {
-				jdText = scraped
-			}
-		}
-
-		cv, _ := os.ReadFile("data/resume.md")
-		result, err := evaluator.EvaluateJob(jdText, string(cv))
+		jdText, err := scraper.ExtractJD(input.URL)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Failed to scrape: " + err.Error()})
 			return
 		}
 
-		// Save to Database
-		app := models.JobApplication{
-			JobDescription: jdText,
-			Status:         "Evaluated",
+		cv, _ := os.ReadFile("data/cv.md")
+		aiResult, err := evaluator.EvaluateAndTailor(jdText, string(cv))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "AI Error: " + err.Error()})
+			return
 		}
-		database.DB.Create(&app)
+
+		finalData := generator.ResumeData{
+			FullName:   "Balayogi Meenakshisundaram",
+			Email:      "mby020801@gmail.com",
+			Phone:      "+91-9600608132",
+			LinkedIn:   "linkedin.com/in/balayogim",
+			GitHub:     "github.com/yogibala",
+			Summary:    aiResult.Summary,
+			Skills:     aiResult.SkillsLatex,
+			Experience: aiResult.ExperienceLatex,
+			Projects:   aiResult.ProjectsLatex,
+			Awards:     aiResult.AwardsLatex,
+		}
+
+		outputPath := "data/tailored_resume.tex"
+		generator.GenerateResume(finalData, outputPath)
+		pdfPath, err := generator.CompileToPDF(outputPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "LaTeX Error: " + err.Error()})
+			return
+		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"evaluation": result,
-			"db_id":      app.ID,
+			"status":  "Success",
+			"grade":   aiResult.Grade,
+			"pdf":     pdfPath,
 		})
 	})
 
+	fmt.Println("🌐 Listening on http://localhost:8080")
 	r.Run(":8080")
 }
