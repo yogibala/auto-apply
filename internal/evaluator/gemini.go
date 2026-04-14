@@ -32,16 +32,24 @@ func EvaluateAndTailor(jd string, cv string) (*AIResponse, error) {
 
 	// Updating to the 2026 standard model
 	model := client.GenerativeModel("gemini-3-flash-preview")
-
 	model.ResponseMIMEType = "application/json"
 
 	prompt := fmt.Sprintf(`
-		Act as a Senior Tech Recruiter. Using the JD and CV provided, generate a tailored resume.
-		Return a JSON object that fits the resume.cls macros exactly.
-		
-		JD: %s
-		CV: %s
-	`, jd, cv)
+		Act as a Senior Technical Recruiter. Your task is to generate a tailored resume based ONLY on the provided CV and JD.
+
+		CRITICAL CONSTRAINTS:
+		1. NO HALLUCINATIONS: Do not invent experience. The candidate has approximately 4 years of experience. Do NOT claim 8+ years.
+		2. DATA INTEGRITY: Use only dates, companies, and roles listed in the CV.
+		3. COMPLETE SECTIONS: You MUST populate the following JSON fields with valid LaTeX using the resume.cls macros:
+		   - "summary": A 3-4 sentence professional summary.
+		   - "skills_latex": Multiple \skillItem[category={...}, skills={...}] macros.
+		   - "experience_latex": \experienceItem[...] followed by \begin{itemize} and \item entries for each relevant role.
+		   - "projects_latex": \projectItem[title={...}, duration={...}, keyHighlight={...}] followed by an itemized list.
+		   - "awards_latex": \skillItem macros for certifications (GCP/AWS).
+
+		CV DATA: %s
+		JOB DESCRIPTION: %s
+	`, cv, jd)
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
